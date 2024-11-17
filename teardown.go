@@ -5,7 +5,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package plex
+// Package teardown provides a simple way to stack functions to be run on
+// teardown. It is useful to ensure that resources are properly released when
+// a function returns, even if it returns early due to an error.
+package teardown
 
 import (
 	"context"
@@ -17,6 +20,8 @@ import (
 	"time"
 )
 
+// CleanupFunc is a function that closes resources and
+// performs a general cleanup.
 type CleanupFunc func() error
 
 // Teardown stacks functions for teardown.
@@ -46,6 +51,9 @@ func (td *Teardown) debugf(format string, v ...interface{}) {
 	}
 }
 
+// AddFunc adds a simple CleanupFunc to the stack, which gets called on cleanup.
+// Generally AddAsyncFunc should be preferred. Use AddFunc when there is a
+// strict order dependency between the cleanup functions.
 func (td *Teardown) AddFunc(fn CleanupFunc) {
 	td.fns = append(td.fns, func() error {
 		td.debugf("Running %s func %s...", td, funcName(fn))
@@ -58,6 +66,9 @@ func (td *Teardown) AddFunc(fn CleanupFunc) {
 	})
 }
 
+// AddAsyncFunc adds a CleanupFunc to the stack, which gets
+// called asynchronously on cleanup. This approach should be used
+// whenever there is no order dependency between the cleanup functions.
 func (td *Teardown) AddAsyncFunc(fn CleanupFunc) {
 	td.fns = append(td.fns, func() error {
 		td.wg.Add(1)
@@ -76,6 +87,8 @@ func (td *Teardown) AddAsyncFunc(fn CleanupFunc) {
 	})
 }
 
+// AddCancelFunc accepts a context.CancelFunc, once cleanup is requested, the
+// cancel func will be called and cancel its context.
 func (td *Teardown) AddCancelFunc(fn context.CancelFunc) {
 	td.fns = append(td.fns, func() error {
 		td.debugf("Running %s cancel-func %s...", td, funcName(fn))
@@ -88,6 +101,8 @@ func (td *Teardown) AddCancelFunc(fn context.CancelFunc) {
 	})
 }
 
+// AddChan accepts a so-called quit-channel, once cleanup is requested
+// we will signal the channel to close by sending a boolean value.
 func (td *Teardown) AddChan(ch chan<- bool) {
 	td.fns = append(td.fns, func() error {
 		td.debugf("Running %s chan-close-func...", td)
