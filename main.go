@@ -11,7 +11,11 @@ package tears
 import (
 	"context"
 	"fmt"
+	"time"
 )
+
+// Timeout after which a cleanup function is considered to be stuck.
+var Timeout = 15 * time.Second
 
 // cleanupFn is a function that closes resources and
 // performs a general cleanup.
@@ -66,28 +70,40 @@ func (c *Cleaner) Tear(v any) {
 
 // Down runs the cleanup functions in reverse order they have been added.
 func (c *Cleaner) Down() error {
-	var lerr error
+	errs := make(chan error, len(*c))
 
 	for i := len(*c) - 1; i >= 0; i-- {
 		if (*c)[i] == nil {
 			continue
 		}
-		if err := (*c)[i](); err != nil {
-			// Do not stop, continue to try to
-			// teardown what is left.
-			lerr = err
+
+		// Run the cleanup function in a goroutine to prevent a deadlock in case
+		// a cleanup function is blocking.
+		done := make(chan bool)
+		go func() {
+			if err := (*c)[i](); err != nil {
+				// Do not stop, continue to try to
+				// teardown what is left.
+				errs <- err
+			}
+			done <- true
+		}()
+
+		select {
+		case <-done:
+			break
+		case <-time.After(Timeout):
+			errs <- fmt.Errorf("timeout")
+			break
 		}
 	}
-	if lerr != nil {
-		return fmt.Errorf("error/s encountered, last error was: %s", lerr)
+	if len(errs) > 0 {
+		return fmt.Errorf("%d errors encountered, first error: %s", len(errs), <-errs)
 	}
-
 	return nil
 }
 
-// AddSyncFunc adds a simple CleanupFunc to the stack, which gets called on cleanup.
-// Generally AddAsyncFunc should be preferred. Use AddSyncFunc when there is a
-// strict order dependency between the cleanup functions.
+// AddSyncFunc adds a simple cleanupFn to the stack, which gets called on cleanup.
 func (c *Cleaner) AddSyncFunc(fn cleanupFn) {
 	*c = append(*c, fn)
 }
