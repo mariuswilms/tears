@@ -10,7 +10,6 @@ package plex
 import (
 	"context"
 	"fmt"
-	"log"
 	"reflect"
 	"runtime"
 	"strings"
@@ -24,6 +23,11 @@ type CleanupFunc func() error
 type Teardown struct {
 	Scope string
 
+	// Debug, if set than this function will receive debug messages. This can
+	// be used to log debug messages to a logger.
+	//  &Teardown{ Debugger: log.Print }
+	Debug func(msg string)
+
 	// fns is a stack of CleanupFuncs to run on Close().
 	fns []CleanupFunc
 
@@ -36,14 +40,20 @@ func (td *Teardown) String() string {
 	return fmt.Sprintf("teardown (%s)", td.Scope)
 }
 
+func (td *Teardown) debugf(format string, v ...interface{}) {
+	if td.Debug != nil {
+		td.Debug(fmt.Sprintf(format, v...))
+	}
+}
+
 func (td *Teardown) AddFunc(fn CleanupFunc) {
 	td.fns = append(td.fns, func() error {
-		log.Printf("Running %s func %s...", td, funcName(fn))
+		td.debugf("Running %s func %s...", td, funcName(fn))
 		start := time.Now()
 
 		err := fn()
 
-		log.Printf("Ran %s func %s in %s", td, funcName(fn), time.Since(start))
+		td.debugf("Ran %s func %s in %s", td, funcName(fn), time.Since(start))
 		return err
 	})
 }
@@ -53,13 +63,13 @@ func (td *Teardown) AddAsyncFunc(fn CleanupFunc) {
 		td.wg.Add(1)
 
 		go func() {
-			log.Printf("Running %s async-func %s...", td, funcName(fn))
+			td.debugf("Running %s async-func %s...", td, funcName(fn))
 			start := time.Now()
 
 			fn()
 			td.wg.Done()
 
-			log.Printf("Ran %s async-func %s in %s", td, funcName(fn), time.Since(start))
+			td.debugf("Ran %s async-func %s in %s", td, funcName(fn), time.Since(start))
 		}()
 
 		return nil
@@ -68,24 +78,24 @@ func (td *Teardown) AddAsyncFunc(fn CleanupFunc) {
 
 func (td *Teardown) AddCancelFunc(fn context.CancelFunc) {
 	td.fns = append(td.fns, func() error {
-		log.Printf("Running %s cancel-func %s...", td, funcName(fn))
+		td.debugf("Running %s cancel-func %s...", td, funcName(fn))
 		start := time.Now()
 
 		fn()
 
-		log.Printf("Ran %s cancel-func %s in %s", td, funcName(fn), time.Since(start))
+		td.debugf("Ran %s cancel-func %s in %s", td, funcName(fn), time.Since(start))
 		return nil
 	})
 }
 
 func (td *Teardown) AddChan(ch chan<- bool) {
 	td.fns = append(td.fns, func() error {
-		log.Printf("Running %s chan-close-func...", td)
+		td.debugf("Running %s chan-close-func...", td)
 		start := time.Now()
 
 		ch <- true
 
-		log.Printf("Ran %s chan-close-func in %s", td, time.Since(start))
+		td.debugf("Ran %s chan-close-func in %s", td, time.Since(start))
 		return nil
 	})
 }
@@ -101,7 +111,7 @@ func (td *Teardown) Close() error {
 		if err := td.fns[i](); err != nil {
 			// Do not stop, continue to try to
 			// teardown what is left.
-			log.Printf("Failed to %s: %s", td, err)
+			td.debugf("Failed to %s: %s", td, err)
 			lerr = err
 		}
 	}
@@ -110,11 +120,11 @@ func (td *Teardown) Close() error {
 	}
 
 	td.wg.Wait()
-	log.Printf("Successfully completed %s with %d func/s", td, len(td.fns))
+	td.debugf("Successfully completed %s with %d func/s", td, len(td.fns))
 	return nil
 }
 
 func funcName(fn interface{}) string {
 	name := runtime.FuncForPC(reflect.ValueOf(fn).Pointer()).Name()
-	return strings.Replace(name, "github.com/rundsk/dsk/internal/", "", 1)
+	return strings.Replace(name, "github.com/mariuswilms/teardown/", "", 1)
 }
