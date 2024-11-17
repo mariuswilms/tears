@@ -5,10 +5,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package teardown provides a simple way to stack functions to be run on
+// Package tears provides a simple way to stack functions to be run on
 // teardown. It is useful to ensure that resources are properly released when
 // a function returns, even if it returns early due to an error.
-package teardown
+package tears
 
 import (
 	"context"
