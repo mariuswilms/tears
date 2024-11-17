@@ -2,8 +2,8 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/mariuswilms/tears.svg)](https://pkg.go.dev/github.com/mariuswilms/tears)
 
-tears provides a way to register cleanup functions, which are than called when the program exits. With tears
-you can implecitly express dependencies between cleanup tasks, so that they are run in the correct order.
+tears provides a way to register cleanup functions, which are than called when the program exits. The package
+has no dependencies outisde of the standard library.
 
 ## Usage
 
@@ -42,7 +42,7 @@ func (s *Server) Stop() {
 }
 ```
 
-Outside of calling a function directly, tears can also help in 
+Outside of calling a function directly, tears can help in 
 closing go routines by using socalled quit-channels.
 
 ```go
