@@ -20,103 +20,139 @@ import (
 	"time"
 )
 
-// CleanupFunc is a function that closes resources and
+// cleanupFn is a function that closes resources and
 // performs a general cleanup.
-type CleanupFunc func() error
+type cleanupFn func() error
 
-// Teardown stacks functions for teardown.
-type Teardown struct {
-	Scope string
+// tearFn is a function that allows to add a cleanup function.
+type tearFn func(c any)
 
-	// Debug, if set than this function will receive debug messages. This can
-	// be used to log debug messages to a logger.
-	//  &Teardown{ Debugger: log.Print }
-	Debug func(msg string)
+// downFn is a function that runs the cleanup functions in reverse order.
+type downFn func() error
 
+// New returns a pair of tear and down functions. The tear function
+// allows to add cleanup functions, the down function runs the cleanup.
+func New() (tearFn, downFn) {
+	var cleaner Cleaner
+	return cleaner.Tear, cleaner.Down
+}
+
+// Cleaner allows to register cleanup functions and run them in reverse order.
+// it is not safe for concurrent use. A Cleaner can be embbeded into another
+// struct to provide tear-down functionality.
+//
+//	type MyApp struct {
+//		tears.Cleaner
+//	}
+//
+//	func (a *MyApp) Run() {
+//		a.Tear(/* ...*/)
+//	}
+//
+//	func a (a *MyApp) Close() {
+//		a.Down()
+//	}
+type Cleaner struct {
 	// fns is a stack of CleanupFuncs to run on Close().
-	fns []CleanupFunc
+	fns []cleanupFn
 
 	// wg is a WaitGroup to block until all async CleanupFuncs have
-	// finished executing.
+	// finished executing. It is used internally on final cleanup.
 	wg sync.WaitGroup
+
+	// Debug, if set than this function will receive debug messages. This can
+	// be used to log debug messages to a logger, i.e.
+	// tears.Cleaner{ Debug: log.Print }
+	Debug func(v ...any)
 }
 
-func (td *Teardown) String() string {
-	return fmt.Sprintf("teardown (%s)", td.Scope)
-}
-
-func (td *Teardown) debugf(format string, v ...interface{}) {
+func (td *Cleaner) debugf(format string, v ...interface{}) {
 	if td.Debug != nil {
 		td.Debug(fmt.Sprintf(format, v...))
 	}
 }
 
-// AddFunc adds a simple CleanupFunc to the stack, which gets called on cleanup.
-// Generally AddAsyncFunc should be preferred. Use AddFunc when there is a
-// strict order dependency between the cleanup functions.
-func (td *Teardown) AddFunc(fn CleanupFunc) {
-	td.fns = append(td.fns, func() error {
-		td.debugf("Running %s func %s...", td, funcName(fn))
-		start := time.Now()
-
-		err := fn()
-
-		td.debugf("Ran %s func %s in %s", td, funcName(fn), time.Since(start))
-		return err
-	})
+func (td *Cleaner) Tear(c any) {
+	switch c.(type) {
+	case func() error:
+		td.AddSyncFunc(c.(func() error))
+	case cleanupFn:
+		td.AddSyncFunc(c.(cleanupFn))
+	case chan<- bool:
+		td.AddChan(c.(chan<- bool))
+	case context.CancelFunc:
+		td.AddCancelFunc(c.(context.CancelFunc))
+	default:
+		panic(fmt.Sprintf("unsupported type %T", c))
+	}
 }
 
 // AddAsyncFunc adds a CleanupFunc to the stack, which gets
 // called asynchronously on cleanup. This approach should be used
 // whenever there is no order dependency between the cleanup functions.
-func (td *Teardown) AddAsyncFunc(fn CleanupFunc) {
+func (td *Cleaner) AddAsyncFunc(fn cleanupFn) {
 	td.fns = append(td.fns, func() error {
 		td.wg.Add(1)
 
 		go func() {
-			td.debugf("Running %s async-func %s...", td, funcName(fn))
+			td.debugf("Running async-func %s...", funcName(fn))
 			start := time.Now()
 
 			fn()
 			td.wg.Done()
 
-			td.debugf("Ran %s async-func %s in %s", td, funcName(fn), time.Since(start))
+			td.debugf("Ran async-func %s in %s", funcName(fn), time.Since(start))
 		}()
 
 		return nil
 	})
 }
 
+// AddSyncFunc adds a simple CleanupFunc to the stack, which gets called on cleanup.
+// Generally AddAsyncFunc should be preferred. Use AddSyncFunc when there is a
+// strict order dependency between the cleanup functions.
+func (td *Cleaner) AddSyncFunc(fn cleanupFn) {
+	td.fns = append(td.fns, func() error {
+		td.debugf("Running func %s...", funcName(fn))
+		start := time.Now()
+
+		err := fn()
+
+		td.debugf("Ran func %s in %s", funcName(fn), time.Since(start))
+		return err
+	})
+}
+
 // AddCancelFunc accepts a context.CancelFunc, once cleanup is requested, the
 // cancel func will be called and cancel its context.
-func (td *Teardown) AddCancelFunc(fn context.CancelFunc) {
+func (td *Cleaner) AddCancelFunc(fn context.CancelFunc) {
 	td.fns = append(td.fns, func() error {
-		td.debugf("Running %s cancel-func %s...", td, funcName(fn))
+		td.debugf("Running cancel-func %s...", funcName(fn))
 		start := time.Now()
 
 		fn()
 
-		td.debugf("Ran %s cancel-func %s in %s", td, funcName(fn), time.Since(start))
+		td.debugf("Ran cancel-func %s in %s", funcName(fn), time.Since(start))
 		return nil
 	})
 }
 
 // AddChan accepts a so-called quit-channel, once cleanup is requested
 // we will signal the channel to close by sending a boolean value.
-func (td *Teardown) AddChan(ch chan<- bool) {
+func (td *Cleaner) AddChan(ch chan<- bool) {
 	td.fns = append(td.fns, func() error {
-		td.debugf("Running %s chan-close-func...", td)
+		td.debugf("Running chan-close-func...")
 		start := time.Now()
 
 		ch <- true
 
-		td.debugf("Ran %s chan-close-func in %s", td, time.Since(start))
+		td.debugf("Ran chan-close-func in %s", time.Since(start))
 		return nil
 	})
 }
 
-// Close runs the teardown funcs in reverse order they have been added.
-func (td *Teardown) Close() error {
+// Down runs the teardown funcs in reverse order they have been added.
+func (td *Cleaner) Down() error {
 	var lerr error
 
 	for i := len(td.fns) - 1; i >= 0; i-- {
@@ -126,16 +162,16 @@ func (td *Teardown) Close() error {
 		if err := td.fns[i](); err != nil {
 			// Do not stop, continue to try to
 			// teardown what is left.
-			td.debugf("Failed to %s: %s", td, err)
+			td.debugf("Failed: %s", err)
 			lerr = err
 		}
 	}
 	if lerr != nil {
-		return fmt.Errorf("error/s encountered in %s, last error was: %s", td, lerr)
+		return fmt.Errorf("error/s encountered, last error was: %s", lerr)
 	}
 
 	td.wg.Wait()
-	td.debugf("Successfully completed %s with %d func/s", td, len(td.fns))
+	td.debugf("Successfully completed with %d func/s", len(td.fns))
 	return nil
 }
 
