@@ -2,7 +2,8 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/mariuswilms/tears.svg)](https://pkg.go.dev/github.com/mariuswilms/tears)
 
-tears provides a way to register cleanup functions, which are than called when the program exits. The package
+tears provides a way to register cleanup functions, which are than called when the program exits. Over defer it adds
+handling of quit channels and alike, and provides more control over when the teardown of resources should happen. The package
 has no dependencies outisde of the standard library.
 
 ## Usage
@@ -26,7 +27,7 @@ Over the defer statement tears has the advantage that cleanup tasks can be
 registered in one method and later run in another method. This is commonly the
 case if you separate the start and stop/close logic with methods on a struct.
 
-```
+```go
 type Server struct {
     tears.Cleaner
     // ...
