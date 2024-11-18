@@ -5,7 +5,10 @@
 
 package tears
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestAdddedGetsCalledWithStructEmbed(t *testing.T) {
 	m := struct {
@@ -17,7 +20,7 @@ func TestAdddedGetsCalledWithStructEmbed(t *testing.T) {
 		called = true
 		return nil
 	})
-	m.Down()
+	m.Down(context.Background())
 	if !called {
 		t.Error("Expected cleanup to be called")
 	}
@@ -31,7 +34,7 @@ func TestAdddedGetsCalledWithVar(t *testing.T) {
 		called = true
 		return nil
 	})
-	cl.Down()
+	cl.Down(context.Background())
 	if !called {
 		t.Error("Expected cleanup to be called")
 	}

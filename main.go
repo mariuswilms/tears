@@ -85,6 +85,8 @@ func (c *Cleaner) Tear(v any) Tear {
 	default:
 		panic(fmt.Sprintf("unsupported type %T", v))
 	}
+
+	*c = append(*c, t)
 	return t
 }
 
