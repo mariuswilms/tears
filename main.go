@@ -51,8 +51,9 @@ func New() (tearFn, downFn) {
 //	}
 type Cleaner []cleanupFn
 
-// Tear accepts cleanup functions, quit-chanells, or a context.CancelFunc. It will
-// add convert them - if necessary - to cleanup functions and add them to the stack.
+// Tear accepts cleanup functions, quit-chanels, or a context.CancelFunc. It
+// will convert them - if necessary - to cleanup functions and add them to the
+// stack.
 func (c *Cleaner) Tear(v any) {
 	switch v.(type) {
 	case func() error:
@@ -82,8 +83,6 @@ func (c *Cleaner) Down() error {
 		done := make(chan bool)
 		go func() {
 			if err := (*c)[i](); err != nil {
-				// Do not stop, continue to try to
-				// teardown what is left.
 				errs <- err
 			}
 			done <- true
@@ -94,6 +93,7 @@ func (c *Cleaner) Down() error {
 			break
 		case <-time.After(Timeout):
 			errs <- fmt.Errorf("timeout")
+			// Do not stop, continue to try to teardown what is left.
 			break
 		}
 	}
