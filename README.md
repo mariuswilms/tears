@@ -20,7 +20,7 @@ func main() {
     tear(conn.Close)
 
     // ...
-    down()
+    down(ctx)
 }
 ```
 
@@ -40,7 +40,7 @@ func (s *Server) Start() {
 }
 
 func (s *Server) Stop() {
-    s.Down()
+    s.Down(context.Background())
 }
 ```
 
@@ -61,7 +61,15 @@ func main() {
             return
         }
     }
-
-    down()
+    
+    // ...
+    down(context.Background())
 }
+```
+
+Usually cleanup functions are called in a FIFO order. If you need to break out of that, tears
+provides a way to prioritize cleanup functions.
+
+```go
+tear(conn.Close).End()
 ```
