@@ -2,10 +2,11 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/mariuswilms/tears.svg)](https://pkg.go.dev/github.com/mariuswilms/tears)
 
-tears provides a way to register cleanup functions, which are then called when
-the program exits. Unlike defer, it adds handling for several cleanup approaches,
-such as quit channels and similar mechanisms, and it offers more robustness against deadlocks and ensures proper resource teardown. The package has no dependencies outside of
-the standard library.
+tears provides an elegant way to register cleanup functions, which are then called
+when the program exits. Unlike defer, it adds handling for several cleanup
+approaches, such as quit channels and similar mechanisms, and it offers more
+robustness against deadlocks and ensures proper resource teardown. The package
+has no dependencies outside of the standard library.
 
 ## Usage
 
@@ -72,4 +73,28 @@ provides a way to prioritize cleanup functions.
 
 ```go
 tear(conn.Close).End()
+```
+
+It's also possible to hook shutdown functions of another setup process into the main one.
+
+```go
+// main.go
+func main() {
+    tear, down := tears.New()
+
+    otel, shutdown := setupOtel()
+    tear(shutdown)
+
+    // ...
+    down(ctx)
+}
+
+// otel.go
+func setupOtel() (tears.DownFn) {
+    tear, down := tears.New()
+
+    tear(/* ... */)
+
+    return down
+}
 ```
