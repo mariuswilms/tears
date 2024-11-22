@@ -61,9 +61,14 @@ func (c *Cleaner) Tear(v any) *Tear {
 	t := &Tear{}
 
 	switch v.(type) {
-	case func(): //  no context, no error, also covers context.CancelFunc
+	case func(): //  no context, no error
 		t.fn = func(context.Context) error {
 			v.(func())()
+			return nil
+		}
+	case context.CancelFunc:
+		t.fn = func(context.Context) error {
+			v.(context.CancelFunc)()
 			return nil
 		}
 	case func() error: // no context, with error
