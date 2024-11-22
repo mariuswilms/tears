@@ -71,17 +71,22 @@ func (c *Cleaner) Tear(v any) *Tear {
 			v.(context.CancelFunc)()
 			return nil
 		}
+
 	case func() error: // no context, with error
 		t.fn = func(context.Context) error {
 			return v.(func() error)()
 		}
+
 	case func(context.Context): // with context, no error
 		t.fn = func(ctx context.Context) error {
 			v.(func(context.Context))(ctx)
 			return nil
 		}
+
 	case func(context.Context) error: // with context, with error
 		t.fn = v.(func(context.Context) error)
+	case DownFn:
+		t.fn = v.(DownFn)
 	case chan<- bool: // quit-channel
 		t.fn = func(context.Context) error {
 			v.(chan<- bool) <- true
