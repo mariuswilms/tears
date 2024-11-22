@@ -20,7 +20,7 @@ import (
 var Timeout = 15 * time.Second
 
 // TearFn is a function that allows to add a cleanup function.
-type TearFn func(c any) Tear
+type TearFn func(c any) *Tear
 
 // DownFn is a function that runs the cleanup functions in reverse order.
 type DownFn func(context.Context) error
@@ -35,13 +35,13 @@ func New() (TearFn, DownFn) {
 // Cleaner allows to register cleanup functions and run them in reverse order.
 // it is not safe for concurrent use. A Cleaner can be embbeded into another
 // struct to provide tear-down functionality.
-type Cleaner []Tear
+type Cleaner []*Tear
 
 type Tear struct {
 	fn func(context.Context) error
 
 	// Usually the cleanup functions are run in the reverse order they have been
-	// added, and in a FIFO manner. The additonal priority allows to break out of
+	// added, and in a LIFO manner. The additonal priority allows to break out of
 	// this. By setting a low (maybe even negative) priority the cleanup function
 	// will run later. By setting a high priority it will run earlier.
 	prio int
@@ -50,15 +50,15 @@ type Tear struct {
 // End will cause the cleanup function to be run at the end of the cleanup
 // phase. When several cleanup function are set to run at the end, they will be
 // run in the reverse order they have been added.
-func (t *Tear) End() Tear {
+func (t *Tear) End() *Tear {
 	t.prio = -1000
-	return *t
+	return t
 }
 
 // Tear accepts a wide range of types that can be used as cleanup functions and
 // types. Tear will schedule the cleanup function to be run on Down.
-func (c *Cleaner) Tear(v any) Tear {
-	var t Tear
+func (c *Cleaner) Tear(v any) *Tear {
+	t := &Tear{}
 
 	switch v.(type) {
 	case func(): //  no context, no error, also covers context.CancelFunc
@@ -94,7 +94,7 @@ func (c *Cleaner) Tear(v any) Tear {
 func (c *Cleaner) Down(ctx context.Context) error {
 	errs := make(chan error, len(*c))
 
-	slices.SortFunc(*c, func(i, j Tear) int {
+	slices.SortFunc(*c, func(i, j *Tear) int {
 		return cmp.Compare(i.prio, j.prio)
 	})
 	for i := len(*c) - 1; i >= 0; i-- {

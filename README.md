@@ -68,8 +68,8 @@ func main() {
 }
 ```
 
-Usually cleanup functions are called in a FIFO order. If you need to break out of that, tears
-provides a way to prioritize cleanup functions.
+Usually cleanup functions are called in a LIFO order. If you need to break out of that, tears
+provides a way to prioritize cleanup functions using `End()`.
 
 ```go
 tear(conn.Close).End()
